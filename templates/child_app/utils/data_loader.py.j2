@@ -1,0 +1,360 @@
+import polars as pl
+from typing import List, Dict, Any
+import io
+import httpx
+from config import settings
+
+
+class DataLoader:
+    """
+    Standardizes input data from various sources into a Polars DataFrame.
+    Automatically detects and converts string columns to appropriate types.
+    """
+
+    @staticmethod
+    def _camel_to_snake(camel_str: str) -> str:
+        """Convert camelCase to snake_case"""
+        result = []
+        for i, char in enumerate(camel_str):
+            if char.isupper():
+                # Add underscore before uppercase letter if it's not the first character
+                if i > 0:
+                    result.append("_")
+                result.append(char.lower())
+            else:
+                result.append(char)
+        return "".join(result)
+
+    @staticmethod
+    def _fix_null_columns(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Fix columns that are entirely null by casting them to String type.
+        This prevents Polars from inferring them as Null type.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with null columns cast to String
+        """
+        conversions = []
+        for col in df.columns:
+            # If column is Null type, cast to String to allow nullable strings
+            if df[col].dtype == pl.Null:
+                conversions.append(pl.col(col).cast(pl.Utf8).alias(col))
+        
+        if conversions:
+            df = df.with_columns(conversions)
+        
+        return df
+
+    @staticmethod
+    def _convert_df_to_snake(df: pl.DataFrame) -> pl.DataFrame:
+        """Convert DataFrame column names from camelCase to snake_case"""
+        df_copy = df.clone()
+        df_copy.columns = [DataLoader._camel_to_snake(col) for col in df_copy.columns]
+        return df_copy
+
+    @staticmethod
+    def _auto_convert_types(df: pl.DataFrame, sample_size: int = 100) -> pl.DataFrame:
+        """
+        Automatically detects and converts string columns to datetime or numeric types.
+
+        Args:
+            df: Input DataFrame
+            sample_size: Number of rows to sample for type detection
+
+        Returns:
+            DataFrame with converted types
+        """
+        if len(df) == 0:
+            return df
+
+        # Sample data for type detection (use min of sample_size and actual length)
+        sample_df = df.head(min(sample_size, len(df)))
+
+        conversions = []
+
+        for col in df.columns:
+            # Only process string columns
+            if df[col].dtype != pl.Utf8:
+                continue
+
+            # Get non-null sample values
+            sample_values = sample_df[col].drop_nulls()
+
+            if len(sample_values) == 0:
+                continue
+
+            # Try to detect datetime
+            if DataLoader._is_datetime_column(sample_values):
+                conversions.append(pl.col(col).str.to_datetime().alias(col))
+                continue
+
+            # Try to detect numeric (int or float)
+            numeric_type = DataLoader._detect_numeric_type(sample_values)
+            if numeric_type == "int":
+                conversions.append(pl.col(col).cast(pl.Int64, strict=False).alias(col))
+            elif numeric_type == "float":
+                conversions.append(
+                    pl.col(col).cast(pl.Float64, strict=False).alias(col)
+                )
+
+        # Apply all conversions at once
+        if conversions:
+            df = df.with_columns(conversions)
+
+        return df
+
+    @staticmethod
+    def _is_datetime_column(sample_values: pl.Series) -> bool:
+        """
+        Checks if a sample of string values appears to be datetime data.
+
+        Args:
+            sample_values: Non-null sample values from a column
+
+        Returns:
+            True if the column appears to contain datetime strings
+        """
+        if len(sample_values) == 0:
+            return False
+
+        # Common datetime patterns to check
+        datetime_indicators = [
+            "-",  # ISO format: 2023-01-01
+            "/",  # US format: 01/01/2023
+            ":",  # Time component: 12:30:45
+        ]
+
+        # Check if values contain datetime indicators
+        first_few = sample_values.head(min(10, len(sample_values))).to_list()
+
+        # Count how many samples look like dates
+        datetime_count = 0
+        for val in first_few:
+            val_str = str(val)
+            # Check for datetime indicators and reasonable length
+            if any(indicator in val_str for indicator in datetime_indicators):
+                # Try to parse as datetime
+                try:
+                    pl.Series([val_str]).str.to_datetime()
+                    datetime_count += 1
+                except Exception:
+                    pass
+
+        # If more than 70% of samples parse as datetime, consider it a datetime column
+        return datetime_count / len(first_few) > 0.7
+
+    @staticmethod
+    def _detect_numeric_type(sample_values: pl.Series) -> str:
+        """
+        Detects if string values are numeric and whether they're int or float.
+
+        Args:
+            sample_values: Non-null sample values from a column
+
+        Returns:
+            "int", "float", or "none" based on detected type
+        """
+        if len(sample_values) == 0:
+            return "none"
+
+        first_few = sample_values.head(min(20, len(sample_values))).to_list()
+
+        int_count = 0
+        float_count = 0
+
+        for val in first_few:
+            val_str = str(val).strip()
+
+            # Skip empty strings
+            if not val_str:
+                continue
+
+            # Try to parse as number
+            try:
+                # Check if it's an integer
+                if val_str.lstrip("-").isdigit():
+                    int(val_str)
+                    int_count += 1
+                # Check if it's a float
+                elif "." in val_str or "e" in val_str.lower():
+                    float(val_str)
+                    float_count += 1
+                else:
+                    # Try general float parsing
+                    float(val_str)
+                    # If it parsed but doesn't have . or e, it's an int
+                    if float(val_str) == int(float(val_str)):
+                        int_count += 1
+                    else:
+                        float_count += 1
+            except ValueError:
+                # Not a number
+                pass
+
+        total_numeric = int_count + float_count
+
+        # If more than 80% of samples are numeric, classify the type
+        if total_numeric / len(first_few) > 0.8:
+            # If any floats detected, treat as float
+            if float_count > 0:
+                return "float"
+            else:
+                return "int"
+
+        return "none"
+
+    @staticmethod
+    def from_raw_json(
+        data: List[Dict[str, Any]],
+        start_date: str,
+        end_date: str,
+        timeout: float = 30.0
+    ) -> pl.DataFrame:
+        """Loads data from a list of dictionaries (API input)."""
+        try:
+            df = pl.DataFrame(data)
+            df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
+            df = DataLoader._auto_convert_types(df)
+            df = DataLoader._convert_df_to_snake(df)
+            return df
+        except Exception as e:
+            raise ValueError(f"Failed to parse JSON data: {e}")
+
+    @staticmethod
+    def from_csv_bytes(
+        csv_content: bytes,
+        start_date: str,
+        end_date: str,
+        timeout: float = 30.0
+    ) -> pl.DataFrame:
+        """Loads data from uploaded CSV bytes."""
+        try:
+            # Read CSV with automatic date parsing
+            df = pl.read_csv(io.BytesIO(csv_content), try_parse_dates=True)
+            df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
+            df = DataLoader._auto_convert_types(df)
+            df = DataLoader._convert_df_to_snake(df)
+            return df
+        except Exception as e:
+            raise ValueError(f"Failed to parse CSV: {e}")
+
+    @staticmethod
+    def from_sql(
+        connection_string: str,
+        start_date: str,
+        end_date: str,
+        timeout: float = 30.0,
+    ) -> pl.DataFrame:
+        """Loads data directly from a SQL database."""
+        query = f"""
+        SELECT *
+        FROM your_table
+        WHERE {settings.START_DATE_COLUMN} >= '{start_date}'
+        AND {settings.END_DATE_COLUMN} <= '{end_date}'
+        """  # ty:ignore[unresolved-attribute]
+        try:
+            # using read_database_uri (requires connectorx)
+            df = pl.read_database_uri(query, connection_string)
+            df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
+            df = DataLoader._auto_convert_types(df)
+            df = DataLoader._convert_df_to_snake(df)
+            return df
+        except Exception as e:
+            raise ValueError(f"Failed to execute SQL query: {e}")
+
+    @staticmethod
+    def from_api(
+        start_date: str,
+        end_date: str,
+        api_url: str,
+        auth_token: str,
+        page_size: int,
+        timeout: float = 30.0,
+    ) -> pl.DataFrame:
+        """
+        Loads data from a paginated API endpoint using nextPageToken.
+
+        Args:
+            start_date: Start date in ISO format (e.g., "2025-12-02T00:00:00")
+            end_date: End date in ISO format (e.g., "2025-12-02T23:59:59")
+            api_url: Optional API URL (overrides settings)
+            page_size: Optional page size (overrides settings)
+            timeout: Request timeout in seconds (default: 30.0)
+
+        Returns:
+            Polars DataFrame with all records between the specified dates
+
+        Raises:
+            ValueError: If API request fails or returns invalid data
+        """
+        all_items = []
+        page_count = 0
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                while True:
+                    page_count += 1
+
+                    # Prepare request payload
+                    payload = {
+                        "startDate": start_date,
+                        "endDate": end_date,
+                        "size": page_size,
+                        "page": page_count,
+                    }
+
+                    # Make POST request
+                    response = client.post(api_url, headers={"Authorization": f"Bearer {auth_token}"}, json=payload, timeout=timeout)
+
+                    # Check for HTTP errors
+                    response.raise_for_status()
+
+                    # Parse response
+                    data = response.json()
+
+                    # Validate response structure
+                    if "payload" not in data:
+                        raise ValueError(
+                            "Invalid API response: missing 'payload' field"
+                        )
+
+                    payload_data = data["payload"]
+
+                    # Extract items
+                    items = payload_data.get("items", [])
+                    all_items.extend(items)
+
+                    # Log progress
+                    total_count = payload_data.get("totalCount", 0)
+                    print(
+                        f"Fetched page {page_count}: {len(items)} records "
+                        f"(total so far: {len(all_items)}/{total_count})"
+                    )
+
+                    # Check if there are more pages
+                    has_next_page = payload_data.get("hasNextPage", False)
+
+                    # Break if no more pages
+                    if not has_next_page:
+                        break
+
+            # Convert to DataFrame
+            if not all_items:
+                print("No data found for the specified date range")
+                return pl.DataFrame()
+
+            df = pl.DataFrame(all_items)
+            df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
+            df = DataLoader._auto_convert_types(df)
+            df = DataLoader._convert_df_to_snake(df)
+
+            print(f"Successfully loaded {len(df)} total records from API")
+            return df
+
+        except httpx.HTTPError as e:
+            raise ValueError(f"HTTP error occurred while fetching data: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to load data from API: {e}")

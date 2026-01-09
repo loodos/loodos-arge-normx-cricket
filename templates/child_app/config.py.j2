@@ -1,0 +1,37 @@
+"""
+Auto-generated configuration for {{ project_id }}
+Data Source: {{ config.data_source_type }}
+"""
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    PROJECT_ID: str = "{{ project_id }}"
+    
+    # Data Source Configuration
+    DATA_SOURCE_TYPE: str = "{{ config.data_source_type }}"
+    
+    {% if config.data_source_type == "sql" %}
+    # Database Configuration
+    CONNECTION_STRING: str = "{{ config.connection_string }}"
+    BATCH_SIZE: int = {{ config.batch_size }}
+    START_DATE_COLUMN: str = "{{ config.start_date_column }}"
+    END_DATE_COLUMN: str = "{{ config.end_date_column }}"
+    {% endif %}
+
+    {% if config.data_source_type == "api" %}
+    # Child Data Source API Configuration (Static from Parent)
+    API_URL: str = "{{ config.api_url }}"
+    API_PAGE_SIZE: int = {{ config.api_page_size }}
+    {% if config.auth_token %}
+    AUTH_TOKEN: str = "{{ config.auth_token }}"
+    {% endif %}
+    {% endif %}
+    
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
+settings = Settings()

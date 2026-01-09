@@ -1,0 +1,38 @@
+import polars as pl
+from typing import Dict, Any, List
+from logic.detectors import get_all_detectors
+
+class DiscrepancyProcessor:
+    def __init__(self):
+        # Load the generated detector functions
+        self.detectors = get_all_detectors()
+
+    def process(self, df: pl.DataFrame) -> Dict[str, Any]:
+        """
+        Runs all detector functions on the dataframe and aggregates results.
+        """
+        full_report = {
+            "total_records": len(df),
+            "discrepancies": []
+        }
+
+        # Run each generated rule
+        for func in self.detectors:
+            # Each function returns a filtered DataFrame of "bad" rows
+            bad_rows_df = func(df)
+            
+            count = len(bad_rows_df)
+            
+            if count > 0:
+                # Convert the specific bad rows to dict for the report
+                # limit to 100 samples to prevent massive JSON payloads
+                samples = bad_rows_df.head(100).to_dicts()
+                
+                full_report["discrepancies"].append({
+                    "rule_id": func.__name__,
+                    "doc_string": func.__doc__.strip(),
+                    "violation_count": count,
+                    "samples": samples
+                })
+
+        return full_report

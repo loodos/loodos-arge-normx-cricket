@@ -1,0 +1,218 @@
+"""
+Auto-generated discrepancy detection script for {{ project_id }}
+Run with: python main.py --start-date 2025-01-01 --end-date 2025-01-31 --report-url https://api.example.com/report
+"""
+import argparse
+import sys
+import json
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+import httpx
+
+from utils.data_loader import DataLoader
+from logic.processor import DiscrepancyProcessor
+from config import settings
+
+
+def load_data(start_date: str, end_date: str, timeout: float) -> Any:
+    """
+    Load data from the configured data source.
+    """
+    source_type = settings.DATA_SOURCE_TYPE
+
+    if source_type == "sql":
+        print(f"Loading data from SQL database...")
+        return DataLoader.from_sql(
+            settings.CONNECTION_STRING,
+            start_date=start_date,
+            end_date=end_date,
+            timeout=timeout,
+        )
+    elif source_type == "api":
+        print(f"Loading data from API: {settings.API_URL}")
+        return DataLoader.from_api(
+            start_date=start_date,
+            end_date=end_date,
+            api_url=settings.API_URL,
+            auth_token=getattr(settings, "AUTH_TOKEN", None),
+            page_size=settings.API_PAGE_SIZE,
+            timeout=timeout,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported data source type: {source_type}. "
+            "Supported types: 'sql', 'api'"
+        )
+
+
+def send_report(report: Dict[str, Any], report_url: str, timeout: float) -> bool:
+    """
+    Send the discrepancy report to the external reporting URL.
+    
+    Args:
+        report: The discrepancy report to send
+        report_url: URL to send the report to
+        timeout: Request timeout in seconds
+        
+    Returns:
+        True if report was sent successfully, False otherwise
+    """
+    if not report_url:
+        print("Warning: No report URL provided. Skipping report submission.")
+        return False
+    
+    print(f"Sending report to: {report_url}")
+    
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            headers = {"Content-Type": "application/json"}
+            
+            response = client.post(
+                report_url,
+                json=report,
+                headers=headers,
+            )
+            response.raise_for_status()
+            
+            print(f"Report sent successfully. Status: {response.status_code}")
+            return True
+            
+    except httpx.HTTPError as e:
+        print(f"Error sending report: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error sending report: {e}")
+        return False
+
+
+def run_detection(
+    start_date: str,
+    end_date: str,
+    report_url: Optional[str] = None,
+    timeout: float = 30.0,
+) -> Dict[str, Any]:
+    """
+    Main detection workflow:
+    1. Load data from configured source
+    2. Process with discrepancy detectors
+    3. Send results to external URL
+    
+    Args:
+        start_date: Start date in ISO format (e.g., "2025-01-01" or "2025-01-01T00:00:00")
+        end_date: End date in ISO format (e.g., "2025-01-31" or "2025-01-31T23:59:59")
+        report_url: URL to send the report to (optional)
+        timeout: Request timeout in seconds
+        
+    Returns:
+        The discrepancy report
+    """
+    print(f"=" * 60)
+    print(f"Discrepancy Detection: {{ project_id }}")
+    print(f"=" * 60)
+    print(f"Start Date: {start_date}")
+    print(f"End Date: {end_date}")
+    print(f"Data Source: {settings.DATA_SOURCE_TYPE}")
+    print(f"-" * 60)
+    
+    # Step 1: Load data
+    print("\n[1/3] Loading data...")
+    try:
+        df = load_data(start_date, end_date, timeout)
+        print(f"Loaded {len(df)} records")
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        raise
+    
+    # Step 2: Process discrepancies
+    print("\n[2/3] Running discrepancy detection...")
+    processor = DiscrepancyProcessor()
+    report = processor.process(df)
+    
+    # Add metadata to report
+    report["project_id"] = settings.PROJECT_ID
+    report["start_date"] = start_date
+    report["end_date"] = end_date
+    report["generated_at"] = datetime.utcnow().isoformat()
+    
+    discrepancy_count = len(report.get("discrepancies", []))
+    total_violations = sum(
+        d.get("violation_count", 0) for d in report.get("discrepancies", [])
+    )
+    print(f"Found {discrepancy_count} rule violations with {total_violations} total issues")
+    
+    # Step 3: Send report
+    print("\n[3/3] Sending report...")
+    send_success = send_report(report, report_url, timeout)
+    
+    if send_success:
+        print("\n✓ Detection complete. Report sent successfully.")
+    else:
+        print("\n⚠ Detection complete. Report could not be sent.")
+    
+    return report
+
+
+def main():
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Run discrepancy detection for {{ project_id }}"
+    )
+    parser.add_argument(
+        "--start-date",
+        required=True,
+        help="Start date in ISO format (e.g., 2025-01-01 or 2025-01-01T00:00:00)"
+    )
+    parser.add_argument(
+        "--end-date",
+        required=True,
+        help="End date in ISO format (e.g., 2025-01-31 or 2025-01-31T23:59:59)"
+    )
+    parser.add_argument(
+        "--report-url",
+        type=str,
+        default=None,
+        help="URL to send the discrepancy report to"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="Request timeout in seconds (default: 30.0)"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Optional file path to save the report as JSON"
+    )
+    
+    args = parser.parse_args()
+    
+    try:
+        # Run detection
+        report = run_detection(
+            start_date=args.start_date,
+            end_date=args.end_date,
+            report_url=args.report_url,
+            timeout=args.timeout,
+        )
+        
+        # Optionally save to file
+        if args.output:
+            with open(args.output, "w") as f:
+                json.dump(report, f, indent=2, default=str)
+            print(f"\nReport saved to: {args.output}")
+        
+        # Exit with error code if discrepancies found
+        if report.get("discrepancies"):
+            sys.exit(1)
+        sys.exit(0)
+        
+    except Exception as e:
+        print(f"\nFatal error: {e}")
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

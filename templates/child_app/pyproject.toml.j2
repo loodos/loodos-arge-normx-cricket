@@ -1,0 +1,24 @@
+[project]
+name = "discrepancy-detector-{{ project_id }}"
+version = "0.1.0"
+description = "Auto-generated discrepancy detection script."
+requires-python = ">=3.10"
+dependencies = [
+    "polars>=0.20.0",
+    "connectorx>=0.3.2",  # For fast SQL -> Polars
+    "httpx>=0.27.0",  # HTTP client for API calls and report submission
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+{% for dep in dependencies %}
+{% if dep not in ["fastapi>=0.109.0", "uvicorn>=0.27.0", "python-multipart>=0.0.17"] %}
+    "{{ dep }}",
+{% endif %}
+{% endfor %}
+]
+
+[project.scripts]
+detect = "main:main"
+
+[tool.uv]
+dev-dependencies = ["pytest"]

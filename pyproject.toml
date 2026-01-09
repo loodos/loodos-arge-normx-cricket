@@ -1,0 +1,23 @@
+[project]
+name = "loodos-arge-normx-cricket"
+version = "0.1.0"
+description = "Cricket Runner Manager - Scheduled discrepancy detection"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "connectorx>=0.4.4",
+    "croniter>=2.0.0",
+    "fastapi>=0.109.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "polars>=1.36.1",
+    "psycopg[binary]>=3.3.2",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+    "python-dotenv>=1.2.1",
+    "pytz>=2024.1",
+    "uvicorn>=0.27.0",
+]
+
+[project.scripts]
+cricket = "main:main"
