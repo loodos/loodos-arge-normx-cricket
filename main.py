@@ -37,7 +37,7 @@ def create_components():
         synthesizer=synthesizer,
         work_dir=work_dir,
         timeout=settings.EXECUTION_TIMEOUT,
-        enliq_report_url=settings.ENLIQ_REPORT_URL,
+        cdn_config=settings.get_cdn_config(),
     )
     
     _scheduler = ProjectScheduler(

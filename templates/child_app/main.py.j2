@@ -1,14 +1,16 @@
 """
 Auto-generated discrepancy detection script for {{ project_id }}
-Run with: python main.py --start-date 2025-01-01 --end-date 2025-01-31 --report-url https://api.example.com/report
+Run with: python main.py --start-date 2025-01-01 --end-date 2025-01-31 --cdn-url ... --cdn-bucket ...
 """
 import argparse
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
+import boto3
 import httpx
+from botocore.config import Config as BotoConfig
 
 from utils.data_loader import DataLoader
 from logic.processor import DiscrepancyProcessor
@@ -46,62 +48,148 @@ def load_data(start_date: str, end_date: str, timeout: float) -> Any:
         )
 
 
-def send_report(report: Dict[str, Any], report_url: str, timeout: float) -> bool:
+def upload_to_cdn(
+    report: Dict[str, Any],
+    cdn_url: str,
+    access_key: str,
+    secret_key: str,
+    bucket_name: str,
+    enable_ssl: bool = True,
+) -> Optional[str]:
     """
-    Send the discrepancy report to the external reporting URL.
+    Upload the discrepancy report to CDN using boto3.
     
     Args:
-        report: The discrepancy report to send
-        report_url: URL to send the report to
+        report: The discrepancy report to upload
+        cdn_url: S3-compatible endpoint URL
+        access_key: Access key for authentication
+        secret_key: Secret key for authentication
+        bucket_name: Name of the bucket
+        enable_ssl: Whether to use SSL
+        
+    Returns:
+        The file path (object key) on CDN, or None if upload failed
+    """
+    if not all([cdn_url, access_key, secret_key, bucket_name]):
+        print("Warning: CDN configuration incomplete. Skipping upload.")
+        return None
+    
+    # Generate file key: /normx/report/project_id_timestamp.json
+    project_id = report.get("project_id", "unknown")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    object_key = f"normx/report/{project_id}_{timestamp}.json"
+    
+    print(f"Uploading report to CDN: {bucket_name}/{object_key}")
+    
+    try:
+        # Configure boto3 client for S3-compatible storage
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=f"{'https' if enable_ssl else 'http'}://{cdn_url}",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=BotoConfig(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+            ),
+            region_name="auto"
+        )
+        
+        # Convert report to JSON
+        report_json = json.dumps(report, indent=2, default=str)
+        
+        # Upload to S3-compatible storage
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=object_key,
+            Body=report_json.encode("utf-8"),
+            ContentType="application/json",
+        )
+        
+        print(f"Report uploaded successfully: {object_key}")
+        return object_key
+        
+    except Exception as e:
+        print(f"Error uploading report to CDN: {e}")
+        return None
+
+
+def send_callback(
+    project_id: str,
+    filepath: str,
+    callback_url: str,
+    timeout: float = 30.0,
+) -> bool:
+    """
+    Send callback notification after CDN upload.
+    
+    Args:
+        project_id: The project identifier
+        filepath: The file path on CDN
+        callback_url: URL to POST the callback to
         timeout: Request timeout in seconds
         
     Returns:
-        True if report was sent successfully, False otherwise
+        True if callback was sent successfully, False otherwise
     """
-    if not report_url:
-        print("Warning: No report URL provided. Skipping report submission.")
+    if not callback_url:
+        print("Warning: No callback URL provided. Skipping callback.")
         return False
     
-    print(f"Sending report to: {report_url}")
+    payload = {
+        "projectId": project_id,
+        "date": datetime.now(timezone.utc).isoformat(),
+        "filepath": filepath,
+    }
+    
+    print(f"Sending callback to: {callback_url}")
+    print(f"Payload: {json.dumps(payload, indent=2)}")
     
     try:
         with httpx.Client(timeout=timeout) as client:
-            headers = {"Content-Type": "application/json"}
-            
             response = client.post(
-                report_url,
-                json=report,
-                headers=headers,
+                callback_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
             )
             response.raise_for_status()
-            
-            print(f"Report sent successfully. Status: {response.status_code}")
+            print(f"Callback sent successfully. Status: {response.status_code}")
             return True
-            
     except httpx.HTTPError as e:
-        print(f"Error sending report: {e}")
+        print(f"Error sending callback: {e}")
         return False
     except Exception as e:
-        print(f"Unexpected error sending report: {e}")
+        print(f"Unexpected error sending callback: {e}")
         return False
 
 
 def run_detection(
     start_date: str,
     end_date: str,
-    report_url: Optional[str] = None,
+    cdn_url: Optional[str] = None,
+    cdn_access_key: Optional[str] = None,
+    cdn_secret_key: Optional[str] = None,
+    cdn_bucket: Optional[str] = None,
+    cdn_enable_ssl: bool = True,
+    callback_url: Optional[str] = None,
     timeout: float = 30.0,
 ) -> Dict[str, Any]:
     """
     Main detection workflow:
     1. Load data from configured source
     2. Process with discrepancy detectors
-    3. Send results to external URL
+    3. Upload results to CDN
+    4. Send callback notification
     
     Args:
         start_date: Start date in ISO format (e.g., "2025-01-01" or "2025-01-01T00:00:00")
         end_date: End date in ISO format (e.g., "2025-01-31" or "2025-01-31T23:59:59")
-        report_url: URL to send the report to (optional)
+        cdn_url: S3-compatible endpoint URL
+        cdn_access_key: Access key for CDN
+        cdn_secret_key: Secret key for CDN
+        cdn_bucket: Bucket name
+        cdn_enable_ssl: Whether to use SSL for upload
+        callback_url: URL to POST callback notification after upload
         timeout: Request timeout in seconds
         
     Returns:
@@ -116,7 +204,7 @@ def run_detection(
     print(f"-" * 60)
     
     # Step 1: Load data
-    print("\n[1/3] Loading data...")
+    print("\n[1/4] Loading data...")
     try:
         df = load_data(start_date, end_date, timeout)
         print(f"Loaded {len(df)} records")
@@ -125,7 +213,7 @@ def run_detection(
         raise
     
     # Step 2: Process discrepancies
-    print("\n[2/3] Running discrepancy detection...")
+    print("\n[2/4] Running discrepancy detection...")
     processor = DiscrepancyProcessor()
     report = processor.process(df)
     
@@ -133,7 +221,7 @@ def run_detection(
     report["project_id"] = settings.PROJECT_ID
     report["start_date"] = start_date
     report["end_date"] = end_date
-    report["generated_at"] = datetime.utcnow().isoformat()
+    report["generated_at"] = datetime.now(timezone.utc).isoformat()
     
     discrepancy_count = len(report.get("discrepancies", []))
     total_violations = sum(
@@ -141,14 +229,36 @@ def run_detection(
     )
     print(f"Found {discrepancy_count} rule violations with {total_violations} total issues")
     
-    # Step 3: Send report
-    print("\n[3/3] Sending report...")
-    send_success = send_report(report, report_url, timeout)
+    # Step 3: Upload report to CDN
+    print("\n[3/4] Uploading report to CDN...")
+    filepath = upload_to_cdn(
+        report=report,
+        cdn_url=cdn_url,
+        access_key=cdn_access_key,
+        secret_key=cdn_secret_key,
+        bucket_name=cdn_bucket,
+        enable_ssl=cdn_enable_ssl,
+    )
     
-    if send_success:
-        print("\n✓ Detection complete. Report sent successfully.")
+    if filepath:
+        report["filepath"] = filepath
+        print("\n✓ Report uploaded successfully.")
+        
+        # Step 4: Send callback notification
+        print("\n[4/4] Sending callback notification...")
+        callback_success = send_callback(
+            project_id=settings.PROJECT_ID,
+            filepath=filepath,
+            callback_url=callback_url,
+            timeout=timeout,
+        )
+        
+        if callback_success:
+            print("\n✓ Detection complete. Callback sent successfully.")
+        else:
+            print("\n⚠ Detection complete. Callback could not be sent.")
     else:
-        print("\n⚠ Detection complete. Report could not be sent.")
+        print("\n⚠ Detection complete. Report could not be uploaded.")
     
     return report
 
@@ -169,10 +279,39 @@ def main():
         help="End date in ISO format (e.g., 2025-01-31 or 2025-01-31T23:59:59)"
     )
     parser.add_argument(
-        "--report-url",
+        "--cdn-url",
         type=str,
         default=None,
-        help="URL to send the discrepancy report to"
+        help="S3-compatible CDN endpoint URL"
+    )
+    parser.add_argument(
+        "--cdn-access-key",
+        type=str,
+        default=None,
+        help="CDN access key"
+    )
+    parser.add_argument(
+        "--cdn-secret-key",
+        type=str,
+        default=None,
+        help="CDN secret key"
+    )
+    parser.add_argument(
+        "--cdn-bucket",
+        type=str,
+        default=None,
+        help="CDN bucket name"
+    )
+    parser.add_argument(
+        "--cdn-no-ssl",
+        action="store_true",
+        help="Disable SSL for CDN uploads"
+    )
+    parser.add_argument(
+        "--callback-url",
+        type=str,
+        default=None,
+        help="URL to POST callback notification after upload"
     )
     parser.add_argument(
         "--timeout",
@@ -194,7 +333,12 @@ def main():
         report = run_detection(
             start_date=args.start_date,
             end_date=args.end_date,
-            report_url=args.report_url,
+            cdn_url=args.cdn_url,
+            cdn_access_key=args.cdn_access_key,
+            cdn_secret_key=args.cdn_secret_key,
+            cdn_bucket=args.cdn_bucket,
+            cdn_enable_ssl=not args.cdn_no_ssl,
+            callback_url=args.callback_url,
             timeout=args.timeout,
         )
         

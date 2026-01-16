@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from geppetto.data.models.cdn import CdnConfig
 from geppetto.data.models.data_source import DataSourceConfig, ApiConfig, SqlConfig, ManualConfig
 from geppetto.data.models.execution import (
     ExecutionStatus,
@@ -34,7 +35,8 @@ class ProjectExecutor:
         synthesizer: CodeSynthesizer,
         work_dir: Optional[Path] = None,
         timeout: int = 300,  # 5 minutes default
-        enliq_report_url: str = "",
+        cdn_config: Optional[CdnConfig] = None,
+        callback_url: str = "",
     ):
         """
         Initialize the executor.
@@ -44,13 +46,15 @@ class ProjectExecutor:
             synthesizer: Code synthesizer for generating child projects
             work_dir: Directory to use for generated projects (default: temp dir)
             timeout: Maximum execution time in seconds
-            enliq_report_url: URL to send discrepancy reports to
+            cdn_config: CDN configuration for uploading reports
+            callback_url: URL to notify after report upload
         """
         self.db_client = db_client
         self.synthesizer = synthesizer
         self.work_dir = work_dir or Path(tempfile.gettempdir()) / "cricket-projects"
         self.timeout = timeout
-        self.enliq_report_url = enliq_report_url
+        self.cdn_config = cdn_config
+        self.callback_url = callback_url
         
         # Ensure work directory exists
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -186,9 +190,18 @@ class ProjectExecutor:
                 "--end-date", end_date,
             ]
             
-            # Add report URL if configured
-            if self.enliq_report_url:
-                cmd.extend(["--report-url", self.enliq_report_url])
+            # Add CDN config if configured
+            if self.cdn_config:
+                cmd.extend(["--cdn-url", self.cdn_config.cdn_url])
+                cmd.extend(["--cdn-access-key", self.cdn_config.access_key])
+                cmd.extend(["--cdn-secret-key", self.cdn_config.secret_key])
+                cmd.extend(["--cdn-bucket", self.cdn_config.bucket_name])
+                if not self.cdn_config.enable_ssl:
+                    cmd.append("--cdn-no-ssl")
+            
+            # Add callback URL if configured
+            if self.callback_url:
+                cmd.extend(["--callback-url", self.callback_url])
             
             # Run the detector script
             print(f"Running detector with date range: {start_date} to {end_date}")
