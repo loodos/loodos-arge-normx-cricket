@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     {% if config.auth_token %}
     AUTH_TOKEN: str = "{{ config.auth_token }}"
     {% endif %}
+    # Login credentials for dynamic token fetching
+    {% if config.login_url %}
+    LOGIN_URL: str = "{{ config.login_url }}"
+    {% endif %}
+    {% if config.login_email %}
+    LOGIN_EMAIL: str = "{{ config.login_email }}"
+    {% endif %}
+    {% if config.login_password %}
+    LOGIN_PASSWORD: str = "{{ config.login_password }}"
+    {% endif %}
     {% endif %}
     
     class Config:

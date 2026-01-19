@@ -38,6 +38,7 @@ def create_components():
         work_dir=work_dir,
         timeout=settings.EXECUTION_TIMEOUT,
         cdn_config=settings.get_cdn_config(),
+        callback_url=settings.ENLIQ_REPORT_CALLBACK_URL,
     )
     
     _scheduler = ProjectScheduler(

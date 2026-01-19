@@ -73,6 +73,51 @@ class DatabaseClient:
         
         return projects
 
+    def get_project(self, project_id: str) -> Optional[ProjectConfig]:
+        """
+        Fetch a single project by ID.
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            ProjectConfig if found, None otherwise
+        """
+        query = """
+            SELECT
+                p.id,
+                p.name,
+                p.config,
+                s.cron_expression,
+                s.timezone,
+                s.allow_concurrent
+            FROM projects p
+            JOIN project_schedules s
+                ON s.project_id = p.id
+            WHERE p.id = %s
+        """
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (project_id,))
+                row = cur.fetchone()
+                
+                if not row:
+                    return None
+                
+                config = row[2]
+                if isinstance(config, str):
+                    config = json.loads(config)
+                
+                return ProjectConfig(
+                    id=row[0],
+                    name=row[1],
+                    config=config,
+                    cron_expression=row[3],
+                    timezone=row[4],
+                    allow_concurrent=row[5],
+                )
+
     def fetch_project_rules(self, project_id: str) -> List[DiscrepancyRule]:
         """
         Fetch all discrepancy rules for a specific project.
