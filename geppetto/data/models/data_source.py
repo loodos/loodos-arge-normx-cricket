@@ -25,7 +25,7 @@ class SqlConfig(BaseModel):
 
 
 class ApiConfig(BaseModel):
-    type: Literal[DataSourceType.API] = DataSourceType.API
+    type: Literal[DataSourceType.API] = DataSourceType.API.value
     api_url: str = Field(..., description="API endpoint URL", min_length=1)
     api_page_size: int = Field(
         default=100, ge=1, description="Page size for API requests"

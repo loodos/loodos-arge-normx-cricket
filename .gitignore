@@ -238,6 +238,8 @@ celerybeat.pid
 
 .idea/
 
+local_test.py
+tmp/
 # Environments
 .env
 .venv
