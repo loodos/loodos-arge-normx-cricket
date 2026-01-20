@@ -204,8 +204,9 @@ def send_callback(
     
     if not start_date:
         start_date = datetime.now(timezone.utc).isoformat()
-    else if "T" not in start_date:
+    elif "T" not in start_date:
         start_date = f"{start_date}T00:00:00Z"
+    
     payload = {
         "projectId": project_id,
         "date": start_date,
@@ -321,6 +322,7 @@ def run_detection(
             filepath=filepath,
             callback_url=callback_url,
             timeout=timeout,
+            start_date=start_date
         )
         
         if callback_success:
