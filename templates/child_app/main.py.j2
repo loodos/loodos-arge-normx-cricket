@@ -183,6 +183,7 @@ def send_callback(
     filepath: str,
     callback_url: str,
     timeout: float = 30.0,
+    start_date: Optional[str] = None,
 ) -> bool:
     """
     Send callback notification after CDN upload.
@@ -192,6 +193,7 @@ def send_callback(
         filepath: The file path on CDN
         callback_url: URL to POST the callback to
         timeout: Request timeout in seconds
+        start_date: Optional start date for the callback payload
         
     Returns:
         True if callback was sent successfully, False otherwise
@@ -200,9 +202,13 @@ def send_callback(
         print("Warning: No callback URL provided. Skipping callback.")
         return False
     
+    if not start_date:
+        start_date = datetime.now(timezone.utc).isoformat()
+    else if "T" not in start_date:
+        start_date = f"{start_date}T00:00:00Z"
     payload = {
         "projectId": project_id,
-        "date": datetime.now(timezone.utc).isoformat(),
+        "date": start_date,
         "filepath": filepath,
     }
     
