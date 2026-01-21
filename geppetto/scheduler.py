@@ -225,34 +225,51 @@ class ProjectScheduler:
     def _scheduler_loop(self) -> None:
         """Main scheduler loop that checks for due projects."""
         print("Scheduler loop started")
-        
+
         while self._running:
             try:
                 self._status.last_check_time = datetime.now(timezone.utc)
-                
+
                 # Check if any project is due
                 scheduled = self.pop_if_due()
-                
+
                 if scheduled and self._on_execute:
-                    self._status.currently_executing = scheduled.project.id
-                    
+                    project_id = scheduled.project.id
+
+                    # Refresh projects from database before execution to ensure
+                    # we have the latest config and the project is still active
+                    print(f"Refreshing projects before executing {project_id}")
+                    self.refresh_projects()
+
+                    # Check if project is still active after refresh
+                    if project_id not in self._projects:
+                        print(f"Project {project_id} is no longer active, skipping execution")
+                        continue
+
+                    # Get the latest project config after refresh
+                    updated_project = self._projects[project_id]
+                    scheduled.project = updated_project
+
+                    self._status.currently_executing = project_id
+
                     try:
-                        # Execute the project
+                        # Execute the project with latest config
                         self._on_execute(scheduled)
                         self._status.successful_executions += 1
                     except Exception as e:
-                        print(f"Error executing project {scheduled.project.id}: {e}")
+                        print(f"Error executing project {project_id}: {e}")
                         self._status.failed_executions += 1
                     finally:
                         self._status.total_executions += 1
                         self._status.currently_executing = None
-                        
-                        # Reschedule for next run
-                        self._reschedule_project(scheduled.project.id)
-                
+
+                        # Reschedule for next run (only if still active)
+                        if project_id in self._projects:
+                            self._reschedule_project(project_id)
+
                 # Sleep before next check
                 time.sleep(self.check_interval)
-                
+
             except Exception as e:
                 print(f"Scheduler error: {e}")
                 time.sleep(self.check_interval)
