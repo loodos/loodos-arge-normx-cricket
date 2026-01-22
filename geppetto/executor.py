@@ -100,11 +100,11 @@ class ProjectExecutor:
         Returns:
             Tuple of (start_date, end_date) in ISO format
         """
-        # Default: yesterday to today
+        # Default: today to today
         now = datetime.now(timezone.utc)
         
         # Check if config specifies a lookback period
-        lookback_days = config.get("lookback_days", 1)
+        lookback_days = config.get("lookback_days", 0)
         
         from datetime import timedelta
         start_date = (now - timedelta(days=lookback_days)).replace(
