@@ -27,9 +27,11 @@ class DiscrepancyProcessor:
                 # Convert the specific bad rows to dict for the report
                 # limit to 100 samples to prevent massive JSON payloads
                 samples = bad_rows_df.head(100).to_dicts()
-                
+
                 full_report["discrepancies"].append({
                     "rule_id": func.__name__,
+                    "rule_display_name": getattr(func, '_rule_display_name', func.__name__),
+                    "explanation": getattr(func, '_explanation', ''),
                     "doc_string": func.__doc__.strip(),
                     "violation_count": count,
                     "samples": samples

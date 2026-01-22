@@ -64,6 +64,7 @@ class CodeSynthesizer:
                 {
                     "func_name": func_name,
                     "rule_id": rule.rule_id,
+                    "rule_display_name": rule.rule_display_name,
                     "description": rule.description,
                     "severity": rule.severity.value,
                     "code": rule.code,  # Injected directly
