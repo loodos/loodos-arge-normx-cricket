@@ -4,6 +4,7 @@ A cron-based scheduler that runs discrepancy detection projects.
 """
 import signal
 import sys
+import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,12 @@ from geppetto.executor import ProjectExecutor
 from geppetto.scheduler import ProjectScheduler
 from synthesizer import CodeSynthesizer
 
+
+# Read version from pyproject.toml
+pyproject_path = Path(__file__).parent / "pyproject.toml"
+with open(pyproject_path, "rb") as f:
+    pyproject_data = tomllib.load(f)
+VERSION = pyproject_data["project"]["version"]
 
 # Global instances for the application
 _db_client: DatabaseClient = None
@@ -76,7 +83,7 @@ async def lifespan(app: FastAPI):
 create_components()
 
 # Create the FastAPI application
-app = create_monitoring_api(_db_client, _scheduler, lifespan=lifespan, executor=_executor)
+app = create_monitoring_api(_db_client, _scheduler, lifespan=lifespan, executor=_executor, version=VERSION)
 
 
 def main():

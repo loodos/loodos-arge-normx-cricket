@@ -408,6 +408,7 @@ def create_monitoring_api(
     scheduler: ProjectScheduler,
     lifespan=None,
     executor=None,
+    version: str = "1.0.0",
 ) -> FastAPI:
     """
     Create the monitoring FastAPI application.
@@ -453,7 +454,7 @@ Cricket is a cron-based scheduler that dynamically synthesizes and executes disc
 | `cancelled` | Execution was cancelled |
 | `timeout` | Execution exceeded time limit |
         """,
-        version="1.0.0",
+        version=version,
         lifespan=lifespan,
         openapi_tags=[
             {
