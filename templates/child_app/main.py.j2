@@ -298,39 +298,43 @@ def run_detection(
     total_violations = sum(
         d.get("violation_count", 0) for d in report.get("discrepancies", [])
     )
-    print(f"Found {discrepancy_count} rule violations with {total_violations} total issues")
-    
-    # Step 3: Upload report to CDN
-    print("\n[3/4] Uploading report to CDN...")
-    filepath = upload_to_cdn(
-        report=report,
-        cdn_url=cdn_url,
-        access_key=cdn_access_key,
-        secret_key=cdn_secret_key,
-        bucket_name=cdn_bucket,
-        enable_ssl=cdn_enable_ssl,
-    )
-    
-    if filepath:
-        report["filepath"] = filepath
-        print("\n✓ Report uploaded successfully.")
-        
-        # Step 4: Send callback notification
-        print("\n[4/4] Sending callback notification...")
-        callback_success = send_callback(
-            project_id=settings.PROJECT_ID,
-            filepath=filepath,
-            callback_url=callback_url,
-            timeout=timeout,
-            start_date=start_date
+
+    if discrepancy_count == 0:
+        print("No discrepancies found.")
+    else:
+        print(f"Found {discrepancy_count} rule violations with {total_violations} total issues")
+
+        # Step 3: Upload report to CDN
+        print("\n[3/4] Uploading report to CDN...")
+        filepath = upload_to_cdn(
+            report=report,
+            cdn_url=cdn_url,
+            access_key=cdn_access_key,
+            secret_key=cdn_secret_key,
+            bucket_name=cdn_bucket,
+            enable_ssl=cdn_enable_ssl,
         )
         
-        if callback_success:
-            print("\n✓ Detection complete. Callback sent successfully.")
+        if filepath:
+            report["filepath"] = filepath
+            print("\n✓ Report uploaded successfully.")
+            
+            # Step 4: Send callback notification
+            print("\n[4/4] Sending callback notification...")
+            callback_success = send_callback(
+                project_id=settings.PROJECT_ID,
+                filepath=filepath,
+                callback_url=callback_url,
+                timeout=timeout,
+                start_date=start_date
+            )
+            
+            if callback_success:
+                print("\n✓ Detection complete. Callback sent successfully.")
+            else:
+                print("\n⚠ Detection complete. Callback could not be sent.")
         else:
-            print("\n⚠ Detection complete. Callback could not be sent.")
-    else:
-        print("\n⚠ Detection complete. Report could not be uploaded.")
+            print("\n⚠ Detection complete. Report could not be uploaded.")
     
     return report
 
