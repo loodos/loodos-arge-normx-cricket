@@ -7,6 +7,10 @@ from typing import Dict, Any
 {% for detector in detectors %}
 {{ detector.code }}
 
+# Attach metadata to function
+{{ detector.func_name }}._rule_display_name = {{ detector.rule_display_name | tojson }}
+{{ detector.func_name }}._explanation = {{ detector.explanation | tojson }}
+
 {% endfor %}
 
 def get_all_detectors():

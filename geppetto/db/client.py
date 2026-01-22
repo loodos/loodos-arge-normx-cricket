@@ -131,6 +131,7 @@ class DatabaseClient:
         query = """
             SELECT
                 rule_id,
+                rule_display_name,
                 definition_id,
                 description,
                 category,
@@ -151,23 +152,24 @@ class DatabaseClient:
                 rows = cur.fetchall()
                 
                 for row in rows:
-                    parameters = row[8]
+                    parameters = row[9]
                     if isinstance(parameters, str):
                         parameters = json.loads(parameters)
                     
-                    dependencies = row[9]
+                    dependencies = row[10]
                     if isinstance(dependencies, str):
                         dependencies = json.loads(dependencies)
                     
                     rules.append(DiscrepancyRule(
                         rule_id=row[0],
-                        definition_id=row[1],
-                        description=row[2],
-                        category=row[3],
-                        severity=Severity(row[4]),
-                        logic=row[5],
-                        code=row[6],
-                        explanation=row[7],
+                        rule_display_name=row[1],
+                        definition_id=row[2],
+                        description=row[3],
+                        category=row[4],
+                        severity=Severity(row[5]),
+                        logic=row[6],
+                        code=row[7],
+                        explanation=row[8],
                         parameters=parameters or {},
                         dependencies=dependencies or [],
                     ))

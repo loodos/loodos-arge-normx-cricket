@@ -329,10 +329,10 @@ class DataLoader:
 
                     # Log progress
                     total_count = payload_data.get("totalCount", 0)
-                    print(
-                        f"Fetched page {page_count}: {len(items)} records "
-                        f"(total so far: {len(all_items)}/{total_count})"
-                    )
+                    #print(
+                    #    f"Fetched page {page_count}: {len(items)} records "
+                    #    f"(total so far: {len(all_items)}/{total_count})"
+                    #)
 
                     # Check if there are more pages
                     has_next_page = payload_data.get("hasNextPage", False)

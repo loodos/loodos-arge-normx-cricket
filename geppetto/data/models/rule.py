@@ -58,6 +58,9 @@ class DiscrepancyRule(BaseModel):
     rule_id: str = Field(
         ..., description="Unique snake_case identifier (e.g., 'late_delivery_check')."
     )
+    rule_display_name: str = Field(
+        ..., description="Human-readable display name for the rule."
+    )
     definition_id: int = Field(
         ...,
         description="Unique numeric identifier for the rule definition that this rule is based on",
