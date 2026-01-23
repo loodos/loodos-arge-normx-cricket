@@ -325,6 +325,64 @@ class CleanupResponse(BaseModel):
     }
 
 
+class RunProjectRequest(BaseModel):
+    """Request body for running a project on-demand."""
+    start_date: str = Field(
+        ...,
+        description="Start date in ISO format (YYYY-MM-DD or full ISO datetime)",
+        example="2026-01-17"
+    )
+    end_date: str = Field(
+        ...,
+        description="End date in ISO format (YYYY-MM-DD or full ISO datetime)",
+        example="2026-01-17"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "start_date": "2026-01-17",
+                "end_date": "2026-01-17"
+            }
+        }
+    }
+
+
+class RunProjectResponse(BaseModel):
+    """Response after triggering a project execution."""
+    message: str = Field(
+        ...,
+        description="Status message",
+        example="Execution started for project 'order-validation'"
+    )
+    execution_id: int = Field(
+        ...,
+        description="The ID of the created execution record",
+        example=12345
+    )
+    project_id: str = Field(
+        ...,
+        description="The project that was executed",
+        example="order-validation"
+    )
+    status: str = Field(
+        ...,
+        description="Final execution status",
+        example="success"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "message": "Execution completed for project 'order-validation'",
+                "execution_id": 12345,
+                "project_id": "order-validation",
+                "status": "success"
+            }
+        }
+    }
+
+
 def execution_to_response(exec: ProjectExecution) -> ExecutionResponse:
     """Convert ProjectExecution to API response."""
     duration = None
@@ -350,6 +408,7 @@ def create_monitoring_api(
     scheduler: ProjectScheduler,
     lifespan=None,
     executor=None,
+    version: str = "1.0.0",
 ) -> FastAPI:
     """
     Create the monitoring FastAPI application.
@@ -395,7 +454,7 @@ Cricket is a cron-based scheduler that dynamically synthesizes and executes disc
 | `cancelled` | Execution was cancelled |
 | `timeout` | Execution exceeded time limit |
         """,
-        version="1.0.0",
+        version=version,
         lifespan=lifespan,
         openapi_tags=[
             {
@@ -929,5 +988,116 @@ This operation:
             )
         except RuntimeError as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post(
+        "/projects/{project_id}/run",
+        response_model=RunProjectResponse,
+        tags=["Projects"],
+        summary="Run project on-demand",
+        description="""
+Execute a project immediately with a specified date range, bypassing the scheduler.
+
+This is useful for:
+- Testing project configurations
+- Ad-hoc analysis for specific date ranges
+- Debugging rule logic
+- Manual re-runs after failures
+
+**Note:** This runs synchronously and may take several minutes depending on the data volume.
+
+The execution will:
+1. Generate detector code from templates
+2. Run the detector with the specified date range
+3. Upload results to CDN (if configured)
+4. Send callback notification (if configured)
+5. Record execution in the database
+        """,
+        responses={
+            200: {
+                "description": "Execution completed",
+                "content": {
+                    "application/json": {
+                        "examples": {
+                            "success": {
+                                "summary": "Successful execution",
+                                "value": {
+                                    "message": "Execution completed for project 'order-validation'",
+                                    "execution_id": 12345,
+                                    "project_id": "order-validation",
+                                    "status": "success"
+                                }
+                            },
+                            "discrepancies_found": {
+                                "summary": "Discrepancies found",
+                                "value": {
+                                    "message": "Execution completed for project 'order-validation'",
+                                    "execution_id": 12346,
+                                    "project_id": "order-validation",
+                                    "status": "success"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            404: {
+                "description": "Project not found",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Project 'invalid-project' not found"}
+                    }
+                }
+            },
+            503: {
+                "description": "Executor not available",
+                "content": {
+                    "application/json": {
+                        "example": {"detail": "Run operation not available - executor not configured"}
+                    }
+                }
+            }
+        }
+    )
+    def run_project(
+        project_id: str = Path(
+            ...,
+            description="Unique project identifier to execute",
+            example="order-validation"
+        ),
+        request: RunProjectRequest = ...,
+    ):
+        """
+        Run a project on-demand with specified date range.
+        
+        This executes the project immediately without waiting for the scheduler.
+        The execution is synchronous and will block until complete.
+        """
+        if executor is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Run operation not available - executor not configured"
+            )
+        
+        # Check if project exists
+        project = db_client.get_project(project_id)
+        if not project:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project '{project_id}' not found"
+            )
+        
+        # Execute the project
+        execution = executor.execute_standalone(
+            project_id=project_id,
+            start_date=request.start_date,
+            end_date=request.end_date,
+        )
+        
+        return RunProjectResponse(
+            message=f"Execution completed for project '{project_id}'",
+            execution_id=execution.id,
+            project_id=project_id,
+            status=execution.status.value,
+        )
 
     return app

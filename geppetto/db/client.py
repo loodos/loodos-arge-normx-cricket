@@ -73,6 +73,51 @@ class DatabaseClient:
         
         return projects
 
+    def get_project(self, project_id: str) -> Optional[ProjectConfig]:
+        """
+        Fetch a single project by ID.
+        
+        Args:
+            project_id: The project identifier
+            
+        Returns:
+            ProjectConfig if found, None otherwise
+        """
+        query = """
+            SELECT
+                p.id,
+                p.name,
+                p.config,
+                s.cron_expression,
+                s.timezone,
+                s.allow_concurrent
+            FROM projects p
+            JOIN project_schedules s
+                ON s.project_id = p.id
+            WHERE p.id = %s
+        """
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (project_id,))
+                row = cur.fetchone()
+                
+                if not row:
+                    return None
+                
+                config = row[2]
+                if isinstance(config, str):
+                    config = json.loads(config)
+                
+                return ProjectConfig(
+                    id=row[0],
+                    name=row[1],
+                    config=config,
+                    cron_expression=row[3],
+                    timezone=row[4],
+                    allow_concurrent=row[5],
+                )
+
     def fetch_project_rules(self, project_id: str) -> List[DiscrepancyRule]:
         """
         Fetch all discrepancy rules for a specific project.
@@ -86,6 +131,7 @@ class DatabaseClient:
         query = """
             SELECT
                 rule_id,
+                rule_display_name,
                 definition_id,
                 description,
                 category,
@@ -106,23 +152,24 @@ class DatabaseClient:
                 rows = cur.fetchall()
                 
                 for row in rows:
-                    parameters = row[8]
+                    parameters = row[9]
                     if isinstance(parameters, str):
                         parameters = json.loads(parameters)
                     
-                    dependencies = row[9]
+                    dependencies = row[10]
                     if isinstance(dependencies, str):
                         dependencies = json.loads(dependencies)
                     
                     rules.append(DiscrepancyRule(
                         rule_id=row[0],
-                        definition_id=row[1],
-                        description=row[2],
-                        category=row[3],
-                        severity=Severity(row[4]),
-                        logic=row[5],
-                        code=row[6],
-                        explanation=row[7],
+                        rule_display_name=row[1],
+                        definition_id=row[2],
+                        description=row[3],
+                        category=row[4],
+                        severity=Severity(row[5]),
+                        logic=row[6],
+                        code=row[7],
+                        explanation=row[8],
                         parameters=parameters or {},
                         dependencies=dependencies or [],
                     ))

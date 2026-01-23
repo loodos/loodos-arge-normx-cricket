@@ -64,6 +64,7 @@ class CodeSynthesizer:
                 {
                     "func_name": func_name,
                     "rule_id": rule.rule_id,
+                    "rule_display_name": rule.rule_display_name,
                     "description": rule.description,
                     "severity": rule.severity.value,
                     "code": rule.code,  # Injected directly
@@ -93,6 +94,10 @@ class CodeSynthesizer:
             "batch_size": config_dict.get("batch_size", 1000),
             "headers": config_dict.get("headers", {}),
             "auth_token": config_dict.get("auth_token", ""),
+            # Login credentials for dynamic token fetching
+            "login_url": config_dict.get("login_url", ""),
+            "login_email": config_dict.get("login_email", ""),
+            "login_password": config_dict.get("login_password", ""),
             "start_date_column": config_dict.get("start_date_column", ""),
             "end_date_column": config_dict.get("end_date_column", ""),
         }

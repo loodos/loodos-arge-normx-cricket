@@ -25,13 +25,23 @@ class SqlConfig(BaseModel):
 
 
 class ApiConfig(BaseModel):
-    type: Literal[DataSourceType.API] = DataSourceType.API
+    type: Literal[DataSourceType.API] = DataSourceType.API.value
     api_url: str = Field(..., description="API endpoint URL", min_length=1)
     api_page_size: int = Field(
         default=100, ge=1, description="Page size for API requests"
     )
     auth_token: str | None = Field(
-        default=None, description="Optional authentication token"
+        default=None, description="Optional static authentication token"
+    )
+    # Login credentials for dynamic token fetching
+    login_url: str | None = Field(
+        default="https://api.frink.com.tr/api/panel/auth/login", description="Login endpoint URL for fetching access token"
+    )
+    login_email: str | None = Field(
+        default="harun.uz@loodos.com", description="Email for login authentication"
+    )
+    login_password: str | None = Field(
+        default="I19Ws3", description="Password for login authentication"
     )
 
 

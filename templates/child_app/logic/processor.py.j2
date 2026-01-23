@@ -18,21 +18,30 @@ class DiscrepancyProcessor:
 
         # Run each generated rule
         for func in self.detectors:
-            # Each function returns a filtered DataFrame of "bad" rows
-            bad_rows_df = func(df)
-            
-            count = len(bad_rows_df)
-            
-            if count > 0:
-                # Convert the specific bad rows to dict for the report
-                # limit to 100 samples to prevent massive JSON payloads
-                samples = bad_rows_df.head(100).to_dicts()
-                
-                full_report["discrepancies"].append({
-                    "rule_id": func.__name__,
-                    "doc_string": func.__doc__.strip(),
-                    "violation_count": count,
-                    "samples": samples
-                })
+            try:
+                # Each function returns a filtered DataFrame of "bad" rows
+                bad_rows_df = func(df)
+                count = len(bad_rows_df)
+                if count > 0:
+                    # Convert the specific bad rows to dict for the report
+                    samples = bad_rows_df.to_dicts()
+
+                    rule_display_name = getattr(func, '_rule_display_name', func.__name__)
+                    explanation = getattr(func, '_explanation', '')
+                    
+                    
+                    # temporarily set rule_id to rule_display_name and doc_string to explanation
+                    # "rule_id": func.__name__,
+                    # "doc_string": func.__doc__.strip(),
+                    full_report["discrepancies"].append({
+                        "rule_id": rule_display_name,
+                        "rule_display_name": rule_display_name,
+                        "explanation": explanation,
+                        "doc_string": explanation,  
+                        "violation_count": count,
+                        "samples": samples
+                    })
+            except Exception as e:
+                print(f"Detector function '{func.__name__}' failed: {e}")
 
         return full_report
