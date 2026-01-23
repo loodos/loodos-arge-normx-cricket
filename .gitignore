@@ -241,6 +241,7 @@ celerybeat.pid
 local_test.py
 tmp/
 # Environments
+.env.*.local
 .env
 .venv
 env/
