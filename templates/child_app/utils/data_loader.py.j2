@@ -215,7 +215,7 @@ class DataLoader:
     ) -> pl.DataFrame:
         """Loads data from a list of dictionaries (API input)."""
         try:
-            df = pl.DataFrame(data)
+            df = pl.DataFrame(data, infer_schema_length=None)
             df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
             df = DataLoader._auto_convert_types(df)
             df = DataLoader._convert_df_to_snake(df)
@@ -346,7 +346,7 @@ class DataLoader:
                 print("No data found for the specified date range")
                 return pl.DataFrame()
 
-            df = pl.DataFrame(all_items)
+            df = pl.DataFrame(all_items, infer_schema_length=None)
             df = DataLoader._fix_null_columns(df)  # Fix null-only columns first
             df = DataLoader._auto_convert_types(df)
             df = DataLoader._convert_df_to_snake(df)
