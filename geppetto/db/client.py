@@ -140,7 +140,7 @@ class DatabaseClient:
                 code,
                 explanation,
                 parameters,
-                dependencies
+                dependencies,
                 is_approved,
                 is_rejected
             FROM discrepancy_rules
