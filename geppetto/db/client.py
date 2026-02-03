@@ -140,9 +140,11 @@ class DatabaseClient:
                 code,
                 explanation,
                 parameters,
-                dependencies
+                dependencies,
+                is_approved,
+                is_rejected
             FROM discrepancy_rules
-            WHERE project_id = %s
+            WHERE project_id = %s AND is_rejected = FALSE
         """
         
         rules = []
@@ -172,6 +174,8 @@ class DatabaseClient:
                         explanation=row[8],
                         parameters=parameters or {},
                         dependencies=dependencies or [],
+                        is_approved=row[11],
+                        is_rejected=row[12],
                     ))
         
         return rules
