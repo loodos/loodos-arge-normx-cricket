@@ -144,7 +144,7 @@ class DatabaseClient:
                 is_approved,
                 is_rejected
             FROM discrepancy_rules
-            WHERE project_id = %s
+            WHERE project_id = %s AND is_rejected = FALSE
         """
         
         rules = []
