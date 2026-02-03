@@ -85,3 +85,6 @@ class DiscrepancyRule(BaseModel):
         default_factory=list,
         description="List of Python packages required (e.g. ['scikit-learn>=1.0']).",
     )
+
+    is_approved: bool = Field(False, description="Whether this rule has been approved")
+    is_rejected: bool = Field(False, description="Whether this rule has been rejected")
