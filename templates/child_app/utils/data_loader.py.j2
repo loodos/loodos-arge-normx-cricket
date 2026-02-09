@@ -351,6 +351,14 @@ class DataLoader:
             df = DataLoader._auto_convert_types(df)
             df = DataLoader._convert_df_to_snake(df)
 
+            # check if any row is duplicated, if so, log a warning and drop duplicates
+            if df.is_duplicated().any():
+                print("Warning: Duplicate rows detected in API data. Dropping duplicates.")
+                # print the duplicated rows for debugging
+                # duplicated_rows = df.filter(df.is_duplicated(keep=False))
+                # print(duplicated_rows)
+                df = df.unique()
+
             print(f"Successfully loaded {len(df)} total records from API")
             return df
 
