@@ -5,7 +5,7 @@ import subprocess
 import shutil
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -100,17 +100,13 @@ class ProjectExecutor:
         Returns:
             Tuple of (start_date, end_date) in ISO format
         """
-        # Default: today to today
+        # Default: yesterday to yesterday if no lookback specified
         now = datetime.now(timezone.utc)
         
-        # Check if config specifies a lookback period
-        lookback_days = config.get("lookback_days", 0)
-        
-        from datetime import timedelta
-        start_date = (now - timedelta(days=lookback_days)).replace(
+        start_date = (now - timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        end_date = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        end_date = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=0)
         
         return start_date.isoformat(), end_date.isoformat()
 
